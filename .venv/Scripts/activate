@@ -38,7 +38,7 @@ deactivate () {
 # unset irrelevant variables
 deactivate nondestructive
 
-VIRTUAL_ENV="C:\Users\buddd\OneDrive\Apps\TweezeAI\.venv"
+VIRTUAL_ENV="C:\dev\TweezeAI\.venv"
 export VIRTUAL_ENV
 
 _OLD_VIRTUAL_PATH="$PATH"
