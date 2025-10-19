@@ -464,6 +464,12 @@ class ValuationCalculator:
                 if ebitda_val and ebitda_val != 0:
                     results.ev_ebitda = float(results.enterprise_value / ebitda_val)
             
+            # ✅ EV/Sales 추가
+            if results.enterprise_value and data.ltm_revenue:
+                revenue_val = validate_number(data.ltm_revenue.value)
+                if revenue_val and revenue_val != 0:
+                    results.ev_sales = float(results.enterprise_value / revenue_val)
+
             if price and data.ltm_eps:
                 eps_val = validate_number(data.ltm_eps.value)
                 if eps_val and eps_val != 0:

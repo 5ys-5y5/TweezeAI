@@ -13,17 +13,19 @@ from collections import defaultdict
 from dataclasses import asdict
 
 from .utils import (
-    dbg, normalize_ticker, today_kst, create_session, CurrencyNormalizer
+    dbg, normalize_ticker, today_kst, create_session, CurrencyNormalizer,
+    validate_number  # ✅ 추가
 )
 from .models import (
     CompanyIdentity, IndicatorDataWithMeta, CollectionAttemptSummary,
-    DataQualityMetrics, ValuationResults, FieldMetadata, AttemptLog
+    DataQualityMetrics, ValuationResults, FieldMetadata, AttemptLog,
+    FIELD_IMPORTANCE_MAP, FieldImportance  # 이 줄 추가
 )
 from .cache import CIKMapper
 from .sources import (
     SECEdgarSource, YahooFinanceSource, FinancialModelingPrepSource,
     AlphaVantageSource, PolygonIOSource, NewsAPISource, MacroFinanceSource,
-    IndustryAverageEstimator, HistoricalTrendEstimator
+    IndustryAverageEstimator, HistoricalTrendEstimator, FinnhubSource
 )
 from .analyzers import (
     PeerAnalyzer, TechnicalIndicatorsCalculator,
@@ -43,6 +45,7 @@ class CollectorOrchestrator:
     SOURCE_PRIORITY = {
         "SEC": 0,
         "Yahoo": 1,
+        "Finnhub": 1,
         "FMP": 2,
         "AlphaVantage": 3,
         "Polygon": 3,
@@ -56,6 +59,7 @@ class CollectorOrchestrator:
         av_key: Optional[str] = None,
         polygon_key: Optional[str] = None,
         news_api_key: Optional[str] = None,
+        finnhub_key: Optional[str] = None,
         enable_peer_analysis: bool = True,
         enable_news_sentiment: bool = True,
         peer_limit: int = 10,
@@ -86,6 +90,7 @@ class CollectorOrchestrator:
         # Core sources
         self.sec = SECEdgarSource(self.cik_mapper, self.session)
         self.yahoo = YahooFinanceSource()
+        self.finnhub = FinnhubSource(finnhub_key, self.session)
         self.fmp = FinancialModelingPrepSource(fmp_key, self.session)
         self.av = AlphaVantageSource(av_key, self.session)
         self.polygon = PolygonIOSource(polygon_key, self.session)
@@ -199,14 +204,26 @@ class CollectorOrchestrator:
         attempts: CollectionAttemptSummary
     ) -> Optional[FieldMetadata]:
         """Cascade fallback으로 누락 필드 채우기"""
+
+        # ✅ 이미 값이 있고 신뢰도가 높으면 스킵
+        if existing and existing.value is not None:
+            reliability = existing.reliability or 0.0
+            if reliability >= 0.75:  # 신뢰도 75% 이상이면 스킵
+                return existing
+
         sources = [
-            self.fmp, self.av, self.polygon,
+            self.finnhub, self.fmp, self.av, self.polygon,
             self.industry_est, self.hist_est
         ]
         
         chosen = existing
 
         for src in sources:
+
+            # ✅ API 키가 없는 소스는 미리 스킵
+            if hasattr(src, 'api_key') and not src.api_key:
+                continue
+
             try:
                 # FMP는 배치 페칭
                 if src == self.fmp:
@@ -413,6 +430,30 @@ class CollectorOrchestrator:
                     )
                     if merged is not None:
                         setattr(ctx, fn, merged)
+
+        # ===== 3.5. Finnhub (Yahoo 대체) ===== ✅ 새로 추가
+        if yerrs and self.finnhub and self.finnhub.api_key:
+            dbg(1403.5, f"Yahoo failed, trying Finnhub fallback...")
+            fh_ind, fh_errs = self.finnhub.fetch_indicators(t, attempts)
+            
+            if fh_errs:
+                dbg(1403.6, f"Finnhub errors: {fh_errs}")
+            
+            if fh_ind:
+                # Merge Finnhub data
+                for fn in dir(ctx):
+                    if fn.startswith("_"):
+                        continue
+                    cv = getattr(ctx, fn, None)
+                    fv = getattr(fh_ind, fn, None)
+                    if isinstance(cv, FieldMetadata) or isinstance(fv, FieldMetadata):
+                        merged = self._merge_field(
+                            cv if isinstance(cv, FieldMetadata) else None,
+                            fv if isinstance(fv, FieldMetadata) else None
+                        )
+                        if merged is not None:
+                            setattr(ctx, fn, merged)
+                dbg(1403.7, "✓ Finnhub data merged")
 
         # ===== 4. Macro DCF Parameters =====
         try:

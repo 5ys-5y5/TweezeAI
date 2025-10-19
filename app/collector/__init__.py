@@ -12,7 +12,9 @@ from .models import (
     DataQualityMetrics,
     ValuationResults,
     TechnicalIndicators,
-    AnalystActivity
+    AnalystActivity,
+    FIELD_IMPORTANCE_MAP,  # 추가
+    FieldImportance        # 추가
 )
 
 __all__ = [
@@ -25,6 +27,8 @@ __all__ = [
     'ValuationResults',
     'TechnicalIndicators',
     'AnalystActivity',
+    'FIELD_IMPORTANCE_MAP',  # 추가
+    'FieldImportance',       # 추가
 ]
 
 __version__ = "25.0.0"

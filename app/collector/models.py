@@ -267,6 +267,7 @@ class ValuationResults:
     pe_ratio: Optional[float] = None
     pb_ratio: Optional[float] = None
     ev_ebitda: Optional[float] = None
+    ev_sales: Optional[float] = None  # ✅ 추가
     dcf_equity_value: Optional[float] = None
     dcf_value_per_share: Optional[float] = None
     dcf_upside_pct: Optional[float] = None

@@ -1,14 +1,3 @@
-# 파이썬/가상환경/캐시 무시
 .venv/
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-
-# 편집기/OS 잡파일 무시
-.vscode/
-.idea/
-.DS_Store
-
-# 선택: 환경변수 파일
-.env

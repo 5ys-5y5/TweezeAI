@@ -24,7 +24,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
-logger = logging.getLogger("api_server")
+logger = logging.getLogger(__name__)
 
 # ========================================================================
 # FastAPI App
@@ -114,6 +114,7 @@ async def startup_event():
     av_key = os.getenv("ALPHAVANTAGE_API_KEY")
     polygon_key = os.getenv("POLYGON_API_KEY")
     news_api_key = os.getenv("NEWS_API_KEY")
+    finnhub_key = os.getenv("FINNHUB_API_KEY")
     
     # 설정된 API 키 로깅
     logger.info(f"📋 API Keys Configuration:")
@@ -121,6 +122,7 @@ async def startup_event():
     logger.info(f"  - AlphaVantage: {'✓ Configured' if av_key else '✗ Missing'}")
     logger.info(f"  - Polygon: {'✓ Configured' if polygon_key else '✗ Missing'}")
     logger.info(f"  - NewsAPI: {'✓ Configured' if news_api_key else '✗ Missing'}")
+    logger.info(f"  - Finnhub: {'✓ Configured' if finnhub_key else '✗ Missing'}")
     
     try:
         orchestrator = CollectorOrchestrator(
@@ -128,6 +130,7 @@ async def startup_event():
             av_key=av_key,
             polygon_key=polygon_key,
             news_api_key=news_api_key,
+            finnhub_key=finnhub_key,
             enable_peer_analysis=True,
             enable_news_sentiment=bool(news_api_key),
             max_rounds=3,
@@ -171,7 +174,8 @@ async def health_check():
             "fmp": bool(os.getenv("FMP_API_KEY")),
             "alphavantage": bool(os.getenv("ALPHAVANTAGE_API_KEY")),
             "polygon": bool(os.getenv("POLYGON_API_KEY")),
-            "newsapi": bool(os.getenv("NEWS_API_KEY"))
+            "newsapi": bool(os.getenv("NEWS_API_KEY")),
+            "finnhub": bool(os.getenv("FINNHUB_API_KEY"))
         }
     )
 
@@ -438,6 +442,15 @@ async def list_sources():
                 "cost": "free (100 req/day) or $449/month",
                 "rate_limit": "100 req/day (free)",
                 "required": bool(os.getenv("NEWS_API_KEY"))
+            },
+            {
+                "name": "Finnhub",
+                "type": "freemium",
+                "coverage": ["global stocks"],
+                "data": ["market data", "quote", "company profile", "financials"],
+                "cost": "free (60 req/min) or $59.99/month",
+                "rate_limit": "60 req/min (free)",
+                "required": bool(os.getenv("FINNHUB_API_KEY"))
             }
         ]
     }

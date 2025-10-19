@@ -897,6 +897,240 @@ class NewsAPISource:
             dbg(700, f"News sentiment error: {e}")
             return {}
 
+# ========================================================================
+# Finnhub Source (Yahoo 대체)
+# ========================================================================
+class FinnhubSource:
+    """Finnhub API 래퍼 (Yahoo 대체용)"""
+    name = "Finnhub"
+    BASE = "https://finnhub.io/api/v1"
+    
+    def __init__(self, api_key: Optional[str], session):
+        self.api_key = api_key
+        self.session = session
+    
+    def _get(self, endpoint: str, params: Dict[str, Any] = None) -> Optional[dict]:
+        """API 호출"""
+        if not self.api_key or not self.session:
+            return None
+        
+        params = params or {}
+        params['token'] = self.api_key
+        
+        try:
+            url = f"{self.BASE}{endpoint}"
+            r = self.session.get(url, params=params, timeout=10)
+            if r.ok:
+                return r.json()
+            else:
+                dbg(801, f"Finnhub API error: {r.status_code}")
+        except Exception as e:
+            dbg(802, f"Finnhub request failed: {e}")
+        
+        return None
+    
+    def fetch_indicators(
+        self,
+        ticker: str,
+        attempt_log: CollectionAttemptSummary
+    ) -> Tuple[Optional[IndicatorDataWithMeta], List[str]]:
+        """재무 지표 수집"""
+        if not self.api_key:
+            return None, ["Finnhub API key not configured"]
+        
+        dbg(810, f"Finnhub fetch_indicators: {ticker}")
+        
+        try:
+            indicator = IndicatorDataWithMeta()
+            asof = today_kst()
+            source_link = f"https://finnhub.io/quote/{ticker}"
+            
+            # 1. Quote (실시간 가격)
+            quote = self._get("/quote", {"symbol": ticker})
+            if quote and quote.get('c'):  # current price
+                price = validate_number(quote.get('c'))
+                if price:
+                    indicator.share_price = FieldMetadata(
+                        value=price,
+                        source=self.name,
+                        source_link=source_link,
+                        date_retrieved=asof,
+                        reliability=0.85,
+                        unit="USD",
+                        currency="USD"
+                    )
+                    dbg(811, f"Finnhub price: ${price}")
+            
+            # 2. Profile (회사 정보)
+            profile = self._get("/stock/profile2", {"symbol": ticker})
+            if profile:
+                # Market Cap
+                mcap = validate_number(profile.get('marketCapitalization'))
+                if mcap:
+                    # Finnhub는 million 단위로 반환
+                    indicator.market_cap = FieldMetadata(
+                        value=mcap * 1_000_000,
+                        source=self.name,
+                        source_link=source_link,
+                        date_retrieved=asof,
+                        reliability=0.85,
+                        currency="USD",
+                        unit="USD"
+                    )
+                
+                # Shares Outstanding
+                shares = validate_number(profile.get('shareOutstanding'))
+                if shares:
+                    # Finnhub는 million 단위로 반환
+                    indicator.shares_outstanding = FieldMetadata(
+                        value=shares * 1_000_000,
+                        source=self.name,
+                        source_link=source_link,
+                        date_retrieved=asof,
+                        reliability=0.85,
+                        unit="shares"
+                    )
+            
+            # 3. Basic Financials (재무 지표)
+            financials = self._get("/stock/metric", {"symbol": ticker, "metric": "all"})
+            if financials and financials.get('metric'):
+                metrics = financials['metric']
+                
+                # Beta
+                beta = validate_number(metrics.get('beta'))
+                if beta:
+                    indicator.beta = FieldMetadata(
+                        value=beta,
+                        source=self.name,
+                        source_link=source_link,
+                        date_retrieved=asof,
+                        reliability=0.80
+                    )
+                
+                # PE Ratio
+                pe = validate_number(metrics.get('peBasicExclExtraTTM'))
+                if pe:
+                    indicator.trailing_pe = FieldMetadata(
+                        value=pe,
+                        source=self.name,
+                        source_link=source_link,
+                        date_retrieved=asof,
+                        reliability=0.80
+                    )
+                
+                # PB Ratio
+                pb = validate_number(metrics.get('pbQuarterly'))
+                if pb:
+                    indicator.price_to_book = FieldMetadata(
+                        value=pb,
+                        source=self.name,
+                        source_link=source_link,
+                        date_retrieved=asof,
+                        reliability=0.80
+                    )
+                
+                # Dividend Yield
+                div_yield = validate_number(metrics.get('dividendYieldIndicatedAnnual'))
+                if div_yield:
+                    indicator.dividend_yield = FieldMetadata(
+                        value=div_yield,
+                        source=self.name,
+                        source_link=source_link,
+                        date_retrieved=asof,
+                        reliability=0.80
+                    )
+                
+                # 52-week High/Low
+                high_52w = validate_number(metrics.get('52WeekHigh'))
+                if high_52w:
+                    indicator.fifty_two_week_high = FieldMetadata(
+                        value=high_52w,
+                        source=self.name,
+                        source_link=source_link,
+                        date_retrieved=asof,
+                        reliability=0.85,
+                        currency="USD"
+                    )
+                
+                low_52w = validate_number(metrics.get('52WeekLow'))
+                if low_52w:
+                    indicator.fifty_two_week_low = FieldMetadata(
+                        value=low_52w,
+                        source=self.name,
+                        source_link=source_link,
+                        date_retrieved=asof,
+                        reliability=0.85,
+                        currency="USD"
+                    )
+            
+            dbg(820, f"✓ Finnhub collected {ticker}")
+            return indicator, []
+            
+        except Exception as e:
+            dbg(821, f"✗ Finnhub error: {e}")
+            return None, [f"Finnhub error: {e}"]
+    
+    def fetch_field(self, ticker: str, field_name: str, context=None) -> Optional[FieldMetadata]:
+        """단일 필드 조회 (Cascade용)"""
+        if not self.api_key:
+            return None
+        
+        asof = today_kst()
+        source_link = f"https://finnhub.io/quote/{ticker}"
+        
+        try:
+            # Share Price
+            if field_name == "share_price":
+                quote = self._get("/quote", {"symbol": ticker})
+                if quote and quote.get('c'):
+                    price = validate_number(quote.get('c'))
+                    if price:
+                        return FieldMetadata(
+                            value=price,
+                            source=self.name,
+                            source_link=source_link,
+                            date_retrieved=asof,
+                            reliability=0.85,
+                            unit="USD",
+                            currency="USD"
+                        )
+            
+            # Market Cap
+            elif field_name == "market_cap":
+                profile = self._get("/stock/profile2", {"symbol": ticker})
+                if profile:
+                    mcap = validate_number(profile.get('marketCapitalization'))
+                    if mcap:
+                        return FieldMetadata(
+                            value=mcap * 1_000_000,
+                            source=self.name,
+                            source_link=source_link,
+                            date_retrieved=asof,
+                            reliability=0.85,
+                            currency="USD",
+                            unit="USD"
+                        )
+            
+            # Shares Outstanding
+            elif field_name == "shares_outstanding":
+                profile = self._get("/stock/profile2", {"symbol": ticker})
+                if profile:
+                    shares = validate_number(profile.get('shareOutstanding'))
+                    if shares:
+                        return FieldMetadata(
+                            value=shares * 1_000_000,
+                            source=self.name,
+                            source_link=source_link,
+                            date_retrieved=asof,
+                            reliability=0.85,
+                            unit="shares"
+                        )
+        
+        except Exception as e:
+            dbg(822, f"Finnhub field fetch error: {e}")
+        
+        return None
+
 
 # ========================================================================
 # Macro Finance Source (DCF Parameters)

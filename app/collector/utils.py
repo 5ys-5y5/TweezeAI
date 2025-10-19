@@ -164,9 +164,21 @@ def create_session() -> 'requests.Session':
     adapter = HTTPAdapter(max_retries=retry)
     session.mount("http://", adapter)
     session.mount("https://", adapter)
-    session.headers.update({'User-Agent': 'EnterpriseCollector/v25'})
     
-    dbg(120, "HTTP session created")
+    # ✅ SEC User-Agent 설정
+    try:
+        from app.config import settings
+        user_agent = settings.sec_user_agent
+    except Exception:
+        user_agent = "fiveyyyyy sungjy@fiveyyyyy.com"
+    
+    session.headers.update({
+        'User-Agent': user_agent,
+        'Accept': 'application/json',
+        'Accept-Encoding': 'gzip, deflate'
+    })
+    
+    dbg(120, f"HTTP session created with User-Agent: {user_agent}")
     return session
 
 
